@@ -1,0 +1,9 @@
+.DS_Store
+*.pyc
+__pycache__/
+*.key
+*.crt
+*.pem
+*.log
+*.err
+.chatgpt-atlas-unblocker/
