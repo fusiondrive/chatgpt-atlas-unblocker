@@ -1,17 +1,14 @@
 #!/bin/bash
+set -e
 
-PLIST_NAME="com.openai.atlas.unblocker.plist"
-TARGET_PLIST="$HOME/Library/LaunchAgents/$PLIST_NAME"
+APP_PATH="/Applications/ChatGPT Atlas.app"
+AURA_PATH="$APP_PATH/Contents/Frameworks/Aura.framework/Versions/A/Aura"
 
-echo "=== Uninstalling ChatGPT Atlas Unblocker ==="
-
-launchctl unload "$TARGET_PLIST" 2>/dev/null || true
-rm -f "$TARGET_PLIST"
-pkill -f atlas_unblocker.py 2>/dev/null || true
-
-networksetup -setwebproxystate "Wi-Fi" "off" 2>/dev/null || true
-networksetup -setsecurewebproxystate "Wi-Fi" "off" 2>/dev/null || true
-
-security delete-certificate -c "ios.chat.openai.com" "$HOME/Library/Keychains/login.keychain-db" 2>/dev/null || true
-
-echo "[+] Uninstalled and proxy settings restored."
+echo "=== Restoring original ChatGPT Atlas binary ==="
+if [ -f "$AURA_PATH.original" ]; then
+    cp "$AURA_PATH.original" "$AURA_PATH"
+    codesign --force --deep -s - "$APP_PATH"
+    echo "[+] Original binary restored successfully."
+else
+    echo "[-] No original backup found at $AURA_PATH.original."
+fi
