@@ -2,6 +2,10 @@
 
 A clean, native binary patcher for OpenAI's **ChatGPT Atlas** macOS application to permanently bypass the sunset deprecation modal while preserving 100% native TLS connections, Apple Keychain access groups, and official API functionality.
 
+<p align="center">
+  <img src="assets/sunset-dialog.png" alt="ChatGPT Atlas Deprecation Dialog" width="650" />
+</p>
+
 ---
 
 ## Technical Overview
