@@ -3,8 +3,7 @@
 ChatGPT Atlas Sunset Patcher
 ----------------------------
 Bypasses the sunset deprecation takeover in ChatGPT Atlas macOS application
-by directly patching the SunsetStatus initialization logic in Aura.framework
-and preserving all Apple Keychain access entitlements.
+by directly patching the SunsetStatus initialization logic in Aura.framework.
 
 No background proxies, no root certificates, no TLS MITM required.
 """
@@ -21,35 +20,16 @@ ENTITLEMENTS_XML = """<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "https://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <key>com.apple.application-identifier</key>
-    <string>2DC432GLL2.com.openai.atlas</string>
-    <key>com.apple.developer.aps-environment</key>
-    <string>production</string>
-    <key>com.apple.developer.associated-domains</key>
-    <array>
-        <string>applinks:platform.openai.com</string>
-        <string>applinks:chat.openai.com</string>
-        <string>applinks:chatgpt.com</string>
-        <string>applinks:chat.com</string>
-    </array>
-    <key>com.apple.developer.team-identifier</key>
-    <string>2DC432GLL2</string>
-    <key>com.apple.developer.web-browser.public-key-credential</key>
-    <true/>
-    <key>com.apple.security.application-groups</key>
-    <array>
-        <string>2DC432GLL2.group.com.openai.atlas</string>
-    </array>
     <key>com.apple.security.device.audio-input</key>
     <true/>
     <key>com.apple.security.device.camera</key>
     <true/>
     <key>com.apple.security.personal-information.photos-library</key>
     <true/>
-    <key>keychain-access-groups</key>
-    <array>
-        <string>2DC432GLL2.com.openai.shared</string>
-    </array>
+    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+    <true/>
+    <key>com.apple.security.cs.disable-library-validation</key>
+    <true/>
 </dict>
 </plist>
 """
@@ -116,7 +96,7 @@ def patch_aura():
     with open(entitlements_path, "w") as f:
         f.write(ENTITLEMENTS_XML)
 
-    print("[+] Re-signing ChatGPT Atlas with Keychain entitlements...")
+    print("[+] Re-signing ChatGPT Atlas with ad-hoc signature...")
     subprocess.run([
         "codesign", "--force", "--deep", "-s", "-",
         "--entitlements", entitlements_path,
