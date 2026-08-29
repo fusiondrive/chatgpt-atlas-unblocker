@@ -1,41 +1,39 @@
-# ChatGPT Atlas Sunset & Deprecation Patcher
+# ChatGPT Atlas Sunset & Deprecation Unblocker
 
-A zero-background-overhead, native binary patcher to eliminate the full-screen deprecation/sunset blocking modal in OpenAI's **ChatGPT Atlas** macOS application.
+A lightweight, zero-side-effect network hook daemon to eliminate the full-screen deprecation/sunset blocking modal in OpenAI's **ChatGPT Atlas** macOS application while preserving 100% official Apple Developer ID code signatures, Apple App Attest / DeviceCheck hardware verification, and Keychain session persistence.
 
 ---
 
-## Technical Mechanism
+## Background & Technical Root Cause
 
-1. **The Sunset Check**:
-   - When ChatGPT Atlas launches, `Aura.framework` invokes `ChatGPTSunset.SunsetStatus.init` to evaluate the sunset status.
-   - When OpenAI returns `hard_deprecation`, the SwiftUI layer renders an unclosable full-screen card dialog (`BrowserSunsetDialogView`) blocking all interactions and prompting the user to switch to the Chrome extension.
+1. **The Sunset Mechanism**:
+   - When ChatGPT Atlas launches, its internal `Aura.framework` queries:
+     `GET https://ios.chat.openai.com/public-api/mobile/app_support_status/v1`
+   - When OpenAI returns `{"status": "hard_deprecation"}`, the SwiftUI layer renders an unclosable full-screen card dialog (`BrowserSunsetDialogView`) blocking all interactions and prompting the user to switch to the Chrome extension.
 
-2. **The Native Binary Patch Solution**:
-   - Directly patches the assembly instructions of `ChatGPTSunset.SunsetStatus.init` in `Aura.framework` to always return `SunsetStatus.supported` (`mov x0, #2; ret`).
-   - Completely eliminates the need for background proxy daemons, root CA certificates, TLS interception, and system network proxy modifications.
-   - Re-signs the app locally with ad-hoc signing (`codesign -s -`) and hardware capability entitlements.
-   - Normal ChatGPT clients (`ChatGPT.app` / `ChatGPT Classic.app`) and other applications are 100% untouched and unaffected.
+2. **Why Modifying Binary / Ad-Hoc Re-signing Fails**:
+   - Modern macOS applications enforce **Apple App Attest (`DCAppAttestService`)** and **Keychain Access Groups (`2DC432GLL2.com.openai.shared`)**.
+   - Any binary modification and local ad-hoc re-signing (`codesign -s -`) strips OpenAI's official Team ID (`2DC432GLL2`), causing OpenAI's login servers to reject device verification with `error_code: preauth_cookie_device_check_failed`.
+
+3. **The Solution (Dynamic SSL Pinning Bypass & Precision Hook)**:
+   - **Target Interception**: Only intercepts `https://ios.chat.openai.com/.../app_support_status/v1` and replies with `{"status":"supported"}`.
+   - **Native SSL Pinning Bypass**: Dynamically injects local CA public key hash into `com.openai.pinned_cert_hash_list` in `UserDefaults`.
+   - **Raw TCP Blind Tunneling**: Performs raw bidirectional TCP passthrough for `chatgpt.com`, `apple.com` (App Attest), and all regular websites.
+   - **Official Binary Preserved**: The app binary remains 100% untouched and signed with OpenAI's official Developer ID certificate.
 
 ---
 
 ## Quick Start
 
-### 1. Patch & Enable
+### 1. Install & Enable
 
 ```bash
 cd chatgpt-atlas-unblocker
 ./install.sh
 ```
 
-### 2. Restore Original Binary
+### 2. Uninstall & Clean Up
 
 ```bash
 ./uninstall.sh
 ```
-
----
-
-## Frequently Asked Questions (FAQ)
-
-### Why does Atlas ask to log in once after patching?
-When an application binary is modified and re-signed locally, macOS Keychain Services isolates the Keychain items stored under OpenAI's official Apple Developer ID (`2DC432GLL2`). You only need to log in **once** via the web interface; the new session credentials will be saved and persisted normally for all subsequent launches.
