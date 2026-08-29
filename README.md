@@ -1,68 +1,76 @@
-# ChatGPT Atlas Sunset Patcher
+# ChatGPT Atlas Sunset & Deprecation Unblocker
 
-A clean, native binary patcher for OpenAI's **ChatGPT Atlas** macOS application to permanently bypass the sunset deprecation modal while preserving 100% native TLS connections, Apple Keychain access groups, and official API functionality.
-
-<p align="center">
-  <img src="assets/sunset-dialog.png" alt="ChatGPT Atlas Deprecation Dialog" width="650" />
-</p>
+A lightweight, zero-side-effect network hook daemon to eliminate the full-screen deprecation/sunset blocking modal in OpenAI's **ChatGPT Atlas** macOS application while preserving 100% official Apple Developer ID code signatures, Apple App Attest / DeviceCheck hardware verification, and Keychain session persistence.
 
 ---
 
-## Technical Overview
+## Background & Technical Root Cause
 
-### 1. Root Cause of Sunset Blocking
-Upon startup, ChatGPT Atlas evaluates the app support status returned by OpenAI's mobile support endpoint:
-`GET https://ios.chat.openai.com/public-api/mobile/app_support_status/v1`
+1. **The Sunset Mechanism**:
+   - When ChatGPT Atlas launches, its internal `Aura.framework` queries:
+     `GET https://ios.chat.openai.com/public-api/mobile/app_support_status/v1`
+   - When OpenAI returns `{"status": "hard_deprecation"}`, the SwiftUI layer renders an unclosable full-screen card dialog (`BrowserSunsetDialogView`) blocking all interactions and prompting the user to switch to the Chrome extension.
 
-When the response contains `{"status": "hard_deprecation"}`, `Aura.framework` invokes `ChatGPTSunset.SunsetStatus.init(rawValue:)` and triggers an unclosable full-screen deprecation dialog (`BrowserSunsetDialogView`).
+2. **Why Simple Self-Signed Certs Fail (SSL Pinning)**:
+   - `Aura.framework` contains built-in SSL Public Key Pinning (`APIClient/CertificatePinning.swift`).
+   - If an intercepting proxy presents a self-signed certificate, even if trusted in macOS Keychain, `SecTrustEvaluate` fails the public key hash verification and displays:
+     > *"Looks like 'ios.chat.openai.com' is the wrong SSL certificate — this could mean someone is tampering with your device or network."*
+   - **The Fix**: OpenAI's `APIClient` checks `CFPreferencesCopyAppValue(CFSTR("com.openai.pinned_cert_hash_list"), ...)` in `UserDefaults`. Our unblocker dynamically computes the SHA256 public key hash of the local certificate and registers it alongside official OpenAI root keys, achieving 100% clean verification pass.
 
-### 2. Why TLS Proxies & MITM Are Problematic
-- Intercepting `ios.chat.openai.com` with a local self-signed TLS certificate triggers Chromium / WebKit SSL certificate pinning checks (`error: ios.chat.openai.com is the wrong SSL certificate`).
-- This SSL error breaks token exchange and conversation stream requests, causing SideChat and Ask GPT responses to fail.
+3. **Why Modifying Binary / Ad-Hoc Re-signing Fails**:
+   - Modern macOS applications enforce **Hardened Runtime**, **Apple App Attest (`DCAppAttestService`)**, and **Keychain Access Groups (`2DC432GLL2.com.openai.shared`)**.
+   - Any binary modification and subsequent local ad-hoc re-signing (`codesign -s -`) strips the official OpenAI Team ID (`2DC432GLL2`), leading to:
+     - Immediate loss of Keychain access (forcing logout).
+     - Failure of Apple App Attest on OpenAI's login servers (`error_code: preauth_cookie_device_check_failed`).
+     - Process spawn rejection on macOS Sequoia/Sonoma (`amfid: Adhoc signed app with restricted entitlements detected`).
 
-### 3. The Clean Solution: Native Binary Hook + Entitlements
-This patcher performs a surgical, non-invasive patch directly inside `Aura.framework`:
-- **Function Hook**: Overwrites `ChatGPTSunset.SunsetStatus.init(rawValue:)` to always return `SunsetStatus.supported` (`mov x0, #2; ret`).
-- **Zero TLS MITM**: All network traffic goes directly over genuine, official HTTPS to OpenAI's servers with zero certificate tampering.
-- **Keychain Entitlements Preserved**: Application is re-signed with the official `keychain-access-groups` (`2DC432GLL2.com.openai.shared`) and application group identifiers, preserving login persistence and preventing `preauth_cookie_device_check_failed` errors.
+4. **The Solution (Precision Selective Hook Architecture)**:
+   - **Target Interception**: Only intercepts `https://ios.chat.openai.com/.../app_support_status/v1` and replies with `{"status":"supported"}`.
+   - **Native SSL Pinning Bypass**: Dynamically injects local CA public key hash into `com.openai.pinned_cert_hash_list`.
+   - **Raw TCP Blind Tunneling**: Performs raw bidirectional TCP passthrough for `chatgpt.com`, `apple.com` (App Attest), and all regular websites. This preserves original Cloudflare/OpenAI SSL certificates with zero TLS decrypt errors (`net::ERR_CERT_AUTHORITY_INVALID`) and zero password prompts.
+   - **Official Binary Preserved**: The app binary remains 100% untouched and signed with OpenAI's official Developer ID certificate.
 
 ---
 
-## Supported Versions
+## Project Structure
 
-| Version | Build Date | Patch Offset | Status |
-| :--- | :--- | :--- | :--- |
-| **`1.2026.189.1`** (Latest) | 2026-07-24 | `0x2ddd630` | Supported |
-| **`1.2026.126.0`** | 2026-05-29 | `0x2b3d3c0` | Supported |
+```
+.
+├── atlas_unblocker.py            # Core precision proxy daemon & pinning manager
+├── com.openai.atlas.unblocker.plist # macOS launchd service configuration
+├── install.sh                    # One-click installation script
+├── uninstall.sh                  # One-click uninstallation script
+└── README.md                     # Documentation
+```
 
 ---
 
 ## Quick Start
 
-### 1. Run the Patcher
+### 1. Install & Enable
 
 ```bash
-git clone https://github.com/fusiondrive/chatgpt-atlas-unblocker.git
 cd chatgpt-atlas-unblocker
 ./install.sh
 ```
 
-### 2. Launch ChatGPT Atlas
+The daemon will be registered under macOS `launchd` as `com.openai.atlas.unblocker` and start automatically in the background on system boot.
 
-Open `/Applications/ChatGPT Atlas.app` normally. The app will launch straight into the browser interface without any sunset dialog or proxy requirements.
-
----
-
-## Uninstall / Restore
-
-To revert the application to its original unmodified binary:
+### 2. Uninstall & Clean Up
 
 ```bash
 ./uninstall.sh
 ```
 
+Restores system proxy settings, removes Keychain certificates, cleans up UserDefaults, and removes the background service.
+
 ---
 
-## License
+## Verification
 
-MIT License. For educational and research purposes only.
+To verify the mock endpoint directly:
+
+```bash
+curl -x 127.0.0.1:8989 -k -s "https://ios.chat.openai.com/public-api/mobile/app_support_status/v1"
+# Returns: {"status":"supported","soft_deprecation":null,"hard_deprecation":null}
+```
